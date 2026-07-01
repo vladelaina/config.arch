@@ -189,7 +189,7 @@ con() {
   fi
 
   git -C "$repo" commit -m "$timestamp" || return
-  env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy git -C "$repo" push
+  env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy GIT_SSH_COMMAND='ssh -F none' git -C "$repo" push
 }
 
 co() {
