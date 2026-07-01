@@ -180,7 +180,7 @@ con() {
   command cp -a "$HOME/.config/niri-appbar/launch-appbar.sh" "$repo/.config/niri-appbar/launch-appbar.sh"
   command cp -a "$HOME/.config/niri-appbar/workspaces.json" "$repo/.config/niri-appbar/workspaces.json"
 
-  timestamp="$(date '+%Y-%m-%d %H:%M:%S %z')"
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
   git -C "$repo" add . || return
 
   if git -C "$repo" diff --cached --quiet; then
@@ -189,7 +189,7 @@ con() {
   fi
 
   git -C "$repo" commit -m "$timestamp" || return
-  git -C "$repo" push
+  env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy git -C "$repo" push
 }
 
 co() {
