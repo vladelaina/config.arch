@@ -146,7 +146,7 @@ alias v4='cd /home/vladelaina/code/vlaina/worktrees/4'
 alias ve='cd /home/vladelaina/code/vlaina/worktrees/end'
 alias va='cd /home/vladelaina/code/vlaina/worktrees/ai'
 
-unalias co coc cc cco oco ococ ge gec e any anyc tag 2>/dev/null
+unalias co coc cc cco oco ococ ge gec e any anyc tag con 2>/dev/null
 
 tag() {
   if [[ $# -lt 1 ]]; then
@@ -162,6 +162,34 @@ tag() {
   else
     git tag -a "$name" -m "$*"
   fi
+}
+
+con() {
+  local repo="$HOME/code/config.arch"
+  local timestamp
+
+  if [[ ! -d "$repo/.git" ]]; then
+    echo "config repo not found: $repo"
+    return 1
+  fi
+
+  mkdir -p "$repo/.config/niri" "$repo/.config/niri-appbar"
+  command cp -a "$HOME/.zshrc" "$repo/.zshrc"
+  command cp -a "$HOME/.config/niri/config.kdl" "$repo/.config/niri/config.kdl"
+  command cp -a "$HOME/.config/niri-appbar/appbar.py" "$repo/.config/niri-appbar/appbar.py"
+  command cp -a "$HOME/.config/niri-appbar/launch-appbar.sh" "$repo/.config/niri-appbar/launch-appbar.sh"
+  command cp -a "$HOME/.config/niri-appbar/workspaces.json" "$repo/.config/niri-appbar/workspaces.json"
+
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S %z')"
+  git -C "$repo" add . || return
+
+  if git -C "$repo" diff --cached --quiet; then
+    echo "no config changes to commit"
+    return 0
+  fi
+
+  git -C "$repo" commit -m "$timestamp" || return
+  git -C "$repo" push
 }
 
 co() {
