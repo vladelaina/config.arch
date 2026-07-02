@@ -213,7 +213,7 @@ any() {
 
   {
     print -r -- "layout grid"
-    for _ in {1..10}; do
+    for _ in {1..20}; do
       print -r -- "launch zsh -ic 'co \"say 6\"; exec zsh'"
     done
   } >| "$session"
