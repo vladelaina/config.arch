@@ -143,6 +143,8 @@ alias v1='cd /home/vladelaina/code/vlaina/worktrees/1'
 alias v2='cd /home/vladelaina/code/vlaina/worktrees/2'
 alias v3='cd /home/vladelaina/code/vlaina/worktrees/3'
 alias v4='cd /home/vladelaina/code/vlaina/worktrees/4'
+alias v5='cd /home/vladelaina/code/vlaina/worktrees/5'
+alias v6='cd /home/vladelaina/code/vlaina/worktrees/6'
 alias ve='cd /home/vladelaina/code/vlaina/worktrees/end'
 alias va='cd /home/vladelaina/code/vlaina/worktrees/ai'
 
