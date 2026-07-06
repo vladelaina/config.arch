@@ -3,3 +3,7 @@ __pycache__/
 *.log
 *.tmp
 *~
+.config/codex.conf
+.config/claude.conf
+!.config/codex.conf.example
+!.config/claude.conf.example

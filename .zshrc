@@ -2,6 +2,41 @@ autoload -Uz compinit
 
 export PATH="$HOME/.local/bin:$PATH"
 
+codex_custom_env_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+for codex_custom_env in \
+  "$codex_custom_env_dir/codex.conf" \
+  "$codex_custom_env_dir/codex-custom.conf" \
+  "$codex_custom_env_dir/environment.d/codex-custom.conf"; do
+  if [[ -r "$codex_custom_env" ]]; then
+    IFS= read -r codex_custom_first_line < "$codex_custom_env"
+    if [[ "$codex_custom_first_line" == [A-Za-z_]*=* ]]; then
+      set -a
+      source "$codex_custom_env"
+      set +a
+    else
+      {
+        IFS= read -r codex_custom_base_url
+        IFS= read -r codex_custom_api_key
+      } < "$codex_custom_env"
+      [[ -n "$codex_custom_base_url" ]] && export CODEX_CUSTOM_BASE_URL="$codex_custom_base_url"
+      [[ -n "$codex_custom_api_key" ]] && export custome="$codex_custom_api_key"
+    fi
+    break
+  fi
+done
+unset codex_custom_api_key codex_custom_base_url codex_custom_env codex_custom_env_dir codex_custom_first_line
+
+codex() {
+  local -a codex_custom_config
+  codex_custom_config=()
+
+  if [[ -n "${CODEX_CUSTOM_BASE_URL:-}" ]]; then
+    codex_custom_config=(-c "model_providers.custom.base_url=\"${CODEX_CUSTOM_BASE_URL}\"")
+  fi
+
+  command codex "${codex_custom_config[@]}" "$@"
+}
+
 unsetopt nomatch
 
 if [[ -d /usr/share/zsh/site-functions ]]; then
@@ -149,7 +184,7 @@ alias 7='cd /home/vladelaina/code/vlaina/worktrees/7'
 alias ve='cd /home/vladelaina/code/vlaina/worktrees/end'
 alias va='cd /home/vladelaina/code/vlaina/worktrees/ai'
 
-unalias co coc cc cco oco ococ ge gec e any anyc tag con 2>/dev/null
+unalias co coc cc cco e any anyc tag con 2>/dev/null
 
 tag() {
   if [[ $# -lt 1 ]]; then
@@ -169,19 +204,48 @@ tag() {
 
 con() {
   local repo="$HOME/code/config.arch"
-  local timestamp
+  local ai_config ai_config_betas ai_config_file ai_config_model ai_config_placeholder ai_config_token ai_config_url timestamp
 
   if [[ ! -d "$repo/.git" ]]; then
     echo "config repo not found: $repo"
     return 1
   fi
 
-  mkdir -p "$repo/.config/niri" "$repo/.config/niri-appbar"
+  mkdir -p "$repo/.config" "$repo/.config/niri" "$repo/.config/niri-appbar"
   command cp -a "$HOME/.zshrc" "$repo/.zshrc"
   command cp -a "$HOME/.config/niri/config.kdl" "$repo/.config/niri/config.kdl"
   command cp -a "$HOME/.config/niri-appbar/appbar.py" "$repo/.config/niri-appbar/appbar.py"
   command cp -a "$HOME/.config/niri-appbar/launch-appbar.sh" "$repo/.config/niri-appbar/launch-appbar.sh"
   command cp -a "$HOME/.config/niri-appbar/workspaces.json" "$repo/.config/niri-appbar/workspaces.json"
+
+  for ai_config in codex claude; do
+    ai_config_file="$HOME/.config/${ai_config}.conf"
+    [[ -r "$ai_config_file" ]] || continue
+
+    {
+      IFS= read -r ai_config_url
+      IFS= read -r ai_config_token
+      IFS= read -r ai_config_model
+      IFS= read -r ai_config_betas
+    } < "$ai_config_file"
+    case "$ai_config" in
+      codex) ai_config_placeholder="<codex_api_key>" ;;
+      claude) ai_config_placeholder="<anthropic_auth_token>" ;;
+    esac
+
+    {
+      print -r -- "$ai_config_url"
+      print -r -- "$ai_config_placeholder"
+    } >| "$repo/.config/${ai_config}.conf.example"
+
+    if [[ "$ai_config" == claude && -n "$ai_config_model" ]]; then
+      print -r -- "$ai_config_model" >> "$repo/.config/${ai_config}.conf.example"
+    fi
+
+    if [[ "$ai_config" == claude && -n "$ai_config_betas" ]]; then
+      print -r -- "$ai_config_betas" >> "$repo/.config/${ai_config}.conf.example"
+    fi
+  done
 
   timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
   git -C "$repo" add . || return
@@ -279,26 +343,6 @@ cco() {
   claude --continue "$@"
 }
 
-oco() {
-  sz
-  opencode "$@"
-}
-
-ococ() {
-  sz
-  opencode --continue "$@"
-}
-
-ge() {
-  sz
-  gemini -m gemini-3.5-flash "$@"
-}
-
-gec() {
-  sz
-  gemini -m gemini-3.5-flash -r latest "$@"
-}
-
 e() {
   nautilus . >/dev/null 2>&1 &
 }
@@ -365,12 +409,29 @@ crh() {
 if [[ -r "$HOME/.config/zsh/neko_api_key" ]]; then
   export NEKO_API_KEY="$(<"$HOME/.config/zsh/neko_api_key")"
 fi
-export GOOGLE_GEMINI_BASE_URL="https://newapi.nekotick.org"
-if [[ -r "$HOME/.config/zsh/gemini_api_key" ]]; then
-  export GEMINI_API_KEY="$(<"$HOME/.config/zsh/gemini_api_key")"
+
+claude_custom_env="${XDG_CONFIG_HOME:-$HOME/.config}/claude.conf"
+if [[ -r "$claude_custom_env" ]]; then
+  {
+    IFS= read -r claude_custom_base_url
+    IFS= read -r claude_custom_auth_token
+    IFS= read -r claude_custom_model
+    IFS= read -r claude_custom_betas
+  } < "$claude_custom_env"
+  [[ -n "$claude_custom_base_url" ]] && export ANTHROPIC_BASE_URL="$claude_custom_base_url"
+  if [[ -n "$claude_custom_auth_token" ]]; then
+    export ANTHROPIC_AUTH_TOKEN="$claude_custom_auth_token"
+    unset ANTHROPIC_API_KEY
+  fi
+  [[ -n "$claude_custom_model" ]] && export ANTHROPIC_MODEL="$claude_custom_model"
+  if [[ -n "$claude_custom_betas" ]]; then
+    export ANTHROPIC_BETAS="$claude_custom_betas"
+  else
+    unset ANTHROPIC_BETAS
+  fi
 fi
-export ANTHROPIC_BASE_URL="$GOOGLE_GEMINI_BASE_URL"
-export ANTHROPIC_AUTH_TOKEN="$GEMINI_API_KEY"
+unset claude_custom_auth_token claude_custom_base_url claude_custom_betas claude_custom_env claude_custom_model
+unset CLAUDE_CUSTOM_BETAS
 
 live() {
   local dir="${PWD:A}"
