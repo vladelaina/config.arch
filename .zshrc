@@ -74,7 +74,7 @@ export HTTP_PROXY="$LOCAL_PROXY_URL"
 export HTTPS_PROXY="$LOCAL_PROXY_URL"
 export all_proxy="$LOCAL_PROXY_URL"
 export ALL_PROXY="$LOCAL_PROXY_URL"
-export no_proxy='localhost,127.0.0.1,::1'
+export no_proxy='localhost,127.0.0.1,::1,packages-prod.broadcom.com'
 export NO_PROXY="$no_proxy"
 export npm_config_proxy="$LOCAL_PROXY_URL"
 export npm_config_https_proxy="$LOCAL_PROXY_URL"
@@ -103,7 +103,7 @@ proxy-on() {
   export HTTPS_PROXY="$LOCAL_PROXY_URL"
   export all_proxy="$LOCAL_PROXY_URL"
   export ALL_PROXY="$LOCAL_PROXY_URL"
-  export no_proxy='localhost,127.0.0.1,::1'
+  export no_proxy='localhost,127.0.0.1,::1,packages-prod.broadcom.com'
   export NO_PROXY="$no_proxy"
 }
 
@@ -116,7 +116,7 @@ proxy-test() {
 }
 
 yay() {
-  with-proxy command yay "$@"
+  GODEBUG=netdns=cgo with-proxy command yay "$@"
 }
 
 paru() {
@@ -192,6 +192,8 @@ alias m1='git -C /home/vladelaina/code/vlaina merge 1'
 alias m2='git -C /home/vladelaina/code/vlaina merge 2'
 alias m3='git -C /home/vladelaina/code/vlaina merge 3'
 alias m4='git -C /home/vladelaina/code/vlaina merge 4'
+alias m6='git -C /home/vladelaina/code/vlaina merge 6'
+alias m7='git -C /home/vladelaina/code/vlaina merge 7'
 alias me='git -C /home/vladelaina/code/vlaina merge end'
 alias ma='git -C /home/vladelaina/code/vlaina merge ai'
 alias mp='git -C /home/vladelaina/code/vlaina push origin main'

@@ -261,7 +261,8 @@ layout {
 // See the binds section below for more spawn examples.
 
 spawn-at-startup "sh" "/home/vladelaina/.config/niri-appbar/launch-appbar.sh"
-spawn-at-startup "fcitx5" "-d"
+spawn-at-startup "fcitx5" "-d" "-r" "-s" "1"
+spawn-sh-at-startup "sleep 3; fcitx5-remote -o; fcitx5-remote -s rime"
 spawn-at-startup "wl-paste" "--watch" "cliphist" "store"
 spawn-at-startup "mako"
 spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
