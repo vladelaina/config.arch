@@ -74,6 +74,8 @@ export HTTP_PROXY="$LOCAL_PROXY_URL"
 export HTTPS_PROXY="$LOCAL_PROXY_URL"
 export all_proxy="$LOCAL_PROXY_URL"
 export ALL_PROXY="$LOCAL_PROXY_URL"
+export no_proxy='localhost,127.0.0.1,::1'
+export NO_PROXY="$no_proxy"
 export npm_config_proxy="$LOCAL_PROXY_URL"
 export npm_config_https_proxy="$LOCAL_PROXY_URL"
 export npm_config_all_proxy="$LOCAL_PROXY_URL"
@@ -86,10 +88,31 @@ with-proxy() {
   HTTPS_PROXY="$LOCAL_PROXY_URL" \
   all_proxy="$LOCAL_PROXY_URL" \
   ALL_PROXY="$LOCAL_PROXY_URL" \
+  no_proxy="${no_proxy:-localhost,127.0.0.1,::1}" \
+  NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}" \
   npm_config_proxy="$LOCAL_PROXY_URL" \
   npm_config_https_proxy="$LOCAL_PROXY_URL" \
   npm_config_all_proxy="$LOCAL_PROXY_URL" \
   "$@"
+}
+
+proxy-on() {
+  export http_proxy="$LOCAL_PROXY_URL"
+  export https_proxy="$LOCAL_PROXY_URL"
+  export HTTP_PROXY="$LOCAL_PROXY_URL"
+  export HTTPS_PROXY="$LOCAL_PROXY_URL"
+  export all_proxy="$LOCAL_PROXY_URL"
+  export ALL_PROXY="$LOCAL_PROXY_URL"
+  export no_proxy='localhost,127.0.0.1,::1'
+  export NO_PROXY="$no_proxy"
+}
+
+proxy-off() {
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+}
+
+proxy-test() {
+  curl -I --max-time 15 https://aur.archlinux.org/rpc?arg=vmware-workstation\&type=info\&v=5
 }
 
 yay() {
