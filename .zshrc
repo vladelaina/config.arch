@@ -192,6 +192,7 @@ alias m1='git -C /home/vladelaina/code/vlaina merge 1'
 alias m2='git -C /home/vladelaina/code/vlaina merge 2'
 alias m3='git -C /home/vladelaina/code/vlaina merge 3'
 alias m4='git -C /home/vladelaina/code/vlaina merge 4'
+alias m5='git -C /home/vladelaina/code/vlaina merge 5'
 alias m6='git -C /home/vladelaina/code/vlaina merge 6'
 alias m7='git -C /home/vladelaina/code/vlaina merge 7'
 alias me='git -C /home/vladelaina/code/vlaina merge end'
@@ -229,19 +230,29 @@ tag() {
 
 con() {
   local repo="$HOME/code/config.arch"
-  local ai_config ai_config_betas ai_config_file ai_config_model ai_config_placeholder ai_config_token ai_config_url timestamp
+  local ai_config ai_config_betas ai_config_file ai_config_model ai_config_placeholder ai_config_token ai_config_url clipspeak_file env_config timestamp
 
   if [[ ! -d "$repo/.git" ]]; then
     echo "config repo not found: $repo"
     return 1
   fi
 
-  mkdir -p "$repo/.config" "$repo/.config/niri" "$repo/.config/niri-appbar"
+  mkdir -p "$repo/.config" "$repo/.config/environment.d" "$repo/.config/niri" "$repo/.config/niri-appbar" "$repo/code/ClipSpeak"
   command cp -a "$HOME/.zshrc" "$repo/.zshrc"
   command cp -a "$HOME/.config/niri/config.kdl" "$repo/.config/niri/config.kdl"
   command cp -a "$HOME/.config/niri-appbar/appbar.py" "$repo/.config/niri-appbar/appbar.py"
   command cp -a "$HOME/.config/niri-appbar/launch-appbar.sh" "$repo/.config/niri-appbar/launch-appbar.sh"
   command cp -a "$HOME/.config/niri-appbar/workspaces.json" "$repo/.config/niri-appbar/workspaces.json"
+
+  for env_config in "$HOME"/.config/environment.d/*.conf(N); do
+    command cp -a "$env_config" "$repo/.config/environment.d/${env_config:t}"
+  done
+
+  for clipspeak_file in clipspeak-toggle.sh requirements.txt; do
+    if [[ -r "$HOME/code/ClipSpeak/$clipspeak_file" ]]; then
+      command cp -a "$HOME/code/ClipSpeak/$clipspeak_file" "$repo/code/ClipSpeak/$clipspeak_file"
+    fi
+  done
 
   for ai_config in codex claude; do
     ai_config_file="$HOME/.config/${ai_config}.conf"

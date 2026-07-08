@@ -407,7 +407,7 @@ binds {
     Mod+T  { spawn "kitty"; }
     Mod+D { spawn "sh" "-c" "pkill fuzzel || fuzzel"; }
     Mod+E { spawn "nautilus" "--new-window"; }
-    Alt+C hotkey-overlay-title="ClipSpeak: read clipboard" { spawn "/home/vladelaina/code/clipspeak/clipspeak-toggle.sh"; }
+    Alt+C hotkey-overlay-title="ClipSpeak: read clipboard" { spawn "/home/vladelaina/code/ClipSpeak/clipspeak-toggle.sh"; }
     Caps_Lock repeat=false hotkey-overlay-title="CapsWriter: toggle dictation" { spawn "/home/vladelaina/code/capswriter/capswriter-toggle.sh"; }
     Mod+V { spawn-sh "pgrep -x cliphist-tui && pkill -x cliphist-tui || kitty --single-instance --class cliphist-tui -e cliphist-tui"; }
     Mod+Alt+W { spawn "waypaper"; }
