@@ -237,8 +237,9 @@ con() {
     return 1
   fi
 
-  mkdir -p "$repo/.config" "$repo/.config/environment.d" "$repo/.config/niri" "$repo/.config/niri-appbar" "$repo/code/ClipSpeak"
+  mkdir -p "$repo/.config" "$repo/.config/environment.d" "$repo/.config/niri" "$repo/.config/kitty" "$repo/.config/niri-appbar" "$repo/code/ClipSpeak"
   command cp -a "$HOME/.zshrc" "$repo/.zshrc"
+  command cp -a "$HOME/.config/kitty/kitty.conf" "$repo/.config/kitty/kitty.conf"
   command cp -a "$HOME/.config/niri/config.kdl" "$repo/.config/niri/config.kdl"
   command cp -a "$HOME/.config/niri-appbar/appbar.py" "$repo/.config/niri-appbar/appbar.py"
   command cp -a "$HOME/.config/niri-appbar/launch-appbar.sh" "$repo/.config/niri-appbar/launch-appbar.sh"
