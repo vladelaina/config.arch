@@ -257,6 +257,20 @@ alias cks='git checkout stable'
 alias ckg='git checkout gh-pages'
 alias mm='git merge main'
 
+# Dynamic shallow clone commands: cl1, cl10, cl110, etc.
+command_not_found_handler() {
+  local command_name="$1"
+  shift
+
+  if [[ "$command_name" =~ '^cl([1-9][0-9]*)$' ]]; then
+    git clone --depth "${match[1]}" "$@"
+    return $?
+  fi
+
+  print -u2 "zsh: command not found: $command_name"
+  return 127
+}
+
 # Aliases: project navigation
 alias code='cd /home/vladelaina/code'
 alias ca='cd /home/vladelaina/code/Catime'
