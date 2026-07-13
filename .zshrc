@@ -1,7 +1,44 @@
+# Zsh core
 autoload -Uz compinit
+unsetopt nomatch
 
+# PATH
 export PATH="$HOME/.local/bin:$PATH"
 
+# Added by Antigravity CLI installer
+export PATH="/home/vladelaina/.local/bin:$PATH"
+
+# Completion
+if [[ -d /usr/share/zsh/site-functions ]]; then
+  fpath=(/usr/share/zsh/site-functions $fpath)
+fi
+
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+
+if [[ -n ${XDG_CACHE_HOME:-} ]]; then
+  zcompdump="${XDG_CACHE_HOME}/zsh/.zcompdump"
+else
+  zcompdump="${HOME}/.cache/zsh/.zcompdump"
+fi
+[[ -d ${zcompdump:h} ]] || mkdir -p "${zcompdump:h}"
+
+compinit -d "$zcompdump"
+
+# Editing and prompt
+autoload -Uz bracketed-paste-magic
+zle -N bracketed-paste bracketed-paste-magic
+
+if [[ -r /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then
+  source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+fi
+
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+fi
+
+# Codex environment
 codex_custom_env_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
 for codex_custom_env in \
   "$codex_custom_env_dir/codex.conf" \
@@ -26,47 +63,36 @@ for codex_custom_env in \
 done
 unset codex_custom_api_key codex_custom_base_url codex_custom_env codex_custom_env_dir codex_custom_first_line
 
-codex() {
-  local -a codex_custom_config
-  codex_custom_config=()
-
-  if [[ -n "${CODEX_CUSTOM_BASE_URL:-}" ]]; then
-    codex_custom_config=(-c "model_providers.custom.base_url=\"${CODEX_CUSTOM_BASE_URL}\"")
+# Claude environment
+claude_custom_env="${XDG_CONFIG_HOME:-$HOME/.config}/claude.conf"
+if [[ -r "$claude_custom_env" ]]; then
+  {
+    IFS= read -r claude_custom_base_url
+    IFS= read -r claude_custom_auth_token
+    IFS= read -r claude_custom_model
+    IFS= read -r claude_custom_betas
+  } < "$claude_custom_env"
+  [[ -n "$claude_custom_base_url" ]] && export ANTHROPIC_BASE_URL="$claude_custom_base_url"
+  if [[ -n "$claude_custom_auth_token" ]]; then
+    export ANTHROPIC_AUTH_TOKEN="$claude_custom_auth_token"
+    unset ANTHROPIC_API_KEY
   fi
+  [[ -n "$claude_custom_model" ]] && export ANTHROPIC_MODEL="$claude_custom_model"
+  if [[ -n "$claude_custom_betas" ]]; then
+    export ANTHROPIC_BETAS="$claude_custom_betas"
+  else
+    unset ANTHROPIC_BETAS
+  fi
+fi
+unset claude_custom_auth_token claude_custom_base_url claude_custom_betas claude_custom_env claude_custom_model
+unset CLAUDE_CUSTOM_BETAS
 
-  command codex "${codex_custom_config[@]}" "$@"
-}
-
-unsetopt nomatch
-
-if [[ -d /usr/share/zsh/site-functions ]]; then
-  fpath=(/usr/share/zsh/site-functions $fpath)
+# Other service environment
+if [[ -r "$HOME/.config/zsh/neko_api_key" ]]; then
+  export NEKO_API_KEY="$(<"$HOME/.config/zsh/neko_api_key")"
 fi
 
-zstyle ':completion:*' menu select
-zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
-zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
-
-if [[ -n ${XDG_CACHE_HOME:-} ]]; then
-  zcompdump="${XDG_CACHE_HOME}/zsh/.zcompdump"
-else
-  zcompdump="${HOME}/.cache/zsh/.zcompdump"
-fi
-[[ -d ${zcompdump:h} ]] || mkdir -p "${zcompdump:h}"
-
-compinit -d "$zcompdump"
-
-autoload -Uz bracketed-paste-magic
-zle -N bracketed-paste bracketed-paste-magic
-
-if [[ -r /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then
-  source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-fi
-
-if command -v starship >/dev/null 2>&1; then
-  eval "$(starship init zsh)"
-fi
-
+# Proxy environment
 export LOCAL_PROXY_URL='http://127.0.0.1:10808'
 export http_proxy="$LOCAL_PROXY_URL"
 export https_proxy="$LOCAL_PROXY_URL"
@@ -78,8 +104,16 @@ export no_proxy='localhost,127.0.0.1,::1,packages-prod.broadcom.com'
 export NO_PROXY="$no_proxy"
 export npm_config_proxy="$LOCAL_PROXY_URL"
 export npm_config_https_proxy="$LOCAL_PROXY_URL"
-export npm_config_all_proxy="$LOCAL_PROXY_URL"
 print -- "--proxy-server=$LOCAL_PROXY_URL" > "${XDG_CONFIG_HOME:-$HOME/.config}/chrome-flags.conf"
+
+# Core helpers
+dev_oom() {
+  if command -v choom >/dev/null 2>&1; then
+    choom -n 600 -- "$@"
+  else
+    "$@"
+  fi
+}
 
 with-proxy() {
   http_proxy="$LOCAL_PROXY_URL" \
@@ -92,10 +126,10 @@ with-proxy() {
   NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}" \
   npm_config_proxy="$LOCAL_PROXY_URL" \
   npm_config_https_proxy="$LOCAL_PROXY_URL" \
-  npm_config_all_proxy="$LOCAL_PROXY_URL" \
   "$@"
 }
 
+# Proxy controls
 proxy-on() {
   export http_proxy="$LOCAL_PROXY_URL"
   export https_proxy="$LOCAL_PROXY_URL"
@@ -115,6 +149,7 @@ proxy-test() {
   curl -I --max-time 15 https://aur.archlinux.org/rpc?arg=vmware-workstation\&type=info\&v=5
 }
 
+# Proxied command wrappers
 yay() {
   GODEBUG=netdns=cgo with-proxy command yay "$@"
 }
@@ -135,14 +170,6 @@ pip3() {
   with-proxy command pip3 "$@"
 }
 
-dev_oom() {
-  if command -v choom >/dev/null 2>&1; then
-    choom -n 600 -- "$@"
-  else
-    "$@"
-  fi
-}
-
 npm() {
   with-proxy dev_oom /usr/bin/npm "$@"
 }
@@ -155,22 +182,68 @@ nvim() {
   with-proxy command nvim "$@"
 }
 
-alias sz='source ~/.zshrc'
+# Replace possible aliases before defining same-name functions.
+unalias co coc cc cco e any anyc tag con sz 2>/dev/null
+
+# Reload this shell configuration before launching AI command wrappers.
+sz() {
+  source "$HOME/.zshrc"
+}
+
+# AI command wrappers
+codex() {
+  local -a codex_custom_config
+  codex_custom_config=()
+
+  if [[ -n "${CODEX_CUSTOM_BASE_URL:-}" ]]; then
+    codex_custom_config=(-c "model_providers.custom.base_url=\"${CODEX_CUSTOM_BASE_URL}\"")
+  fi
+
+  command codex "${codex_custom_config[@]}" "$@"
+}
+
+co() {
+  sz
+  codex "$@"
+}
+
+coc() {
+  sz
+  codex resume --last "$@"
+}
+
+cc() {
+  sz
+  claude "$@"
+}
+
+cco() {
+  sz
+  claude --continue "$@"
+}
+
+# Aliases: shell and editors
 alias zs='nvim ~/.zshrc'
-alias de='pnpm dev'
-alias win='pnpm package:win'
 alias i='nvim'
 alias vi='nvim'
 alias vim='nvim'
-alias ff='fastfetch'
 alias si='sudo nvim'
-alias syu='sudo pacman -Syu'
-alias sps='sudo pacman -S'
-alias spr='sudo pacman -Rns'
+alias pw='pwd'
+alias ..='cd ..'
 alias mk='mkdir'
 alias rmr='rm -rf'
 alias ls='lsd'
 alias la='lsd -a'
+alias ff='fastfetch'
+
+# Aliases: package and dev commands
+alias syu='sudo pacman -Syu'
+alias sps='sudo pacman -S'
+alias spr='sudo pacman -Rns'
+alias de='pnpm dev'
+alias win='pnpm package:win'
+
+# Aliases: git
 alias cl='git clone'
 alias p='git push'
 alias pt='git push --tags'
@@ -182,22 +255,11 @@ alias op='git add . && git commit -m "🌟 chore: update daily development chang
 alias ckm='git checkout main'
 alias cks='git checkout stable'
 alias ckg='git checkout gh-pages'
+alias mm='git merge main'
+
+# Aliases: project navigation
 alias code='cd /home/vladelaina/code'
 alias ca='cd /home/vladelaina/code/Catime'
-alias pw='pwd'
-alias ..='cd ..'
-alias goo='curl -so /dev/null -x "$LOCAL_PROXY_URL" -w "DNS: %{time_namelookup}s | Connect: %{time_connect}s | TLS: %{time_appconnect}s | Total: %{time_total}s\n" https://www.google.com --connect-timeout 5'
-alias mm='git merge main'
-alias m1='git -C /home/vladelaina/code/vlaina merge 1'
-alias m2='git -C /home/vladelaina/code/vlaina merge 2'
-alias m3='git -C /home/vladelaina/code/vlaina merge 3'
-alias m4='git -C /home/vladelaina/code/vlaina merge 4'
-alias m5='git -C /home/vladelaina/code/vlaina merge 5'
-alias m6='git -C /home/vladelaina/code/vlaina merge 6'
-alias m7='git -C /home/vladelaina/code/vlaina merge 7'
-alias me='git -C /home/vladelaina/code/vlaina merge end'
-alias ma='git -C /home/vladelaina/code/vlaina merge ai'
-alias mp='git -C /home/vladelaina/code/vlaina push origin main'
 alias vv='cd /home/vladelaina/code/vlaina'
 alias vw='cd /home/vladelaina/code/official-website'
 alias 1='cd /home/vladelaina/code/vlaina/worktrees/1'
@@ -210,8 +272,22 @@ alias 7='cd /home/vladelaina/code/vlaina/worktrees/7'
 alias ve='cd /home/vladelaina/code/vlaina/worktrees/end'
 alias va='cd /home/vladelaina/code/vlaina/worktrees/ai'
 
-unalias co coc cc cco e any anyc tag con 2>/dev/null
+# Aliases: vlaina worktree operations
+alias m1='git -C /home/vladelaina/code/vlaina merge 1'
+alias m2='git -C /home/vladelaina/code/vlaina merge 2'
+alias m3='git -C /home/vladelaina/code/vlaina merge 3'
+alias m4='git -C /home/vladelaina/code/vlaina merge 4'
+alias m5='git -C /home/vladelaina/code/vlaina merge 5'
+alias m6='git -C /home/vladelaina/code/vlaina merge 6'
+alias m7='git -C /home/vladelaina/code/vlaina merge 7'
+alias me='git -C /home/vladelaina/code/vlaina merge end'
+alias ma='git -C /home/vladelaina/code/vlaina merge ai'
+alias mp='git -C /home/vladelaina/code/vlaina push origin main'
 
+# Aliases: network checks
+alias goo='curl -so /dev/null -x "$LOCAL_PROXY_URL" -w "DNS: %{time_namelookup}s | Connect: %{time_connect}s | TLS: %{time_appconnect}s | Total: %{time_total}s\n" https://www.google.com --connect-timeout 5'
+
+# Git helpers
 tag() {
   if [[ $# -lt 1 ]]; then
     echo "usage: tag <name> [message...]"
@@ -228,6 +304,44 @@ tag() {
   fi
 }
 
+h() {
+  git reset --hard HEAD
+  git clean -fd
+  git status
+}
+
+ac() {
+  git add .
+  git commit -am "$*"
+}
+
+ap() {
+  git add .
+  git commit -m "$*"
+  git push
+}
+
+amend() {
+  git commit --amend -m "$*"
+}
+
+rhh() {
+  git reset --hard HEAD^
+}
+
+rh() {
+  git reset --hard "$1"
+}
+
+crhh() {
+  config reset --hard HEAD^
+}
+
+crh() {
+  config reset --hard "$1"
+}
+
+# Config backup helper
 con() {
   local repo="$HOME/code/config.arch"
   local ai_config ai_config_betas ai_config_file ai_config_model ai_config_placeholder ai_config_token ai_config_url clipspeak_file env_config timestamp
@@ -296,11 +410,7 @@ con() {
   env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy GIT_SSH_COMMAND='ssh -F none' git -C "$repo" push
 }
 
-co() {
-  sz
-  codex "$@"
-}
-
+# Terminal and desktop helpers
 any() {
   if ! command -v kitty >/dev/null 2>&1; then
     echo "kitty is not installed or not in PATH"
@@ -365,21 +475,6 @@ anyc() {
   echo "closed $stopped any kitty window(s)"
 }
 
-coc() {
-  sz
-  codex resume --last "$@"
-}
-
-cc() {
-  sz
-  claude "$@"
-}
-
-cco() {
-  sz
-  claude --continue "$@"
-}
-
 e() {
   nautilus . >/dev/null 2>&1 &
 }
@@ -389,35 +484,6 @@ cow() {
   local random_cow=${cows[$RANDOM % ${#cows[@]} + 1]}
 
   /usr/bin/cowsay -f "$random_cow" "$*"
-}
-
-h() {
-  git reset --hard HEAD
-  git clean -fd
-  git status
-}
-
-ac() {
-  git add .
-  git commit -am "$*"
-}
-
-ap() {
-  git add .
-  git commit -m "$*"
-  git push
-}
-
-amend() {
-  git commit --amend -m "$*"
-}
-
-rhh() {
-  git reset --hard HEAD^
-}
-
-rh() {
-  git reset --hard "$1"
 }
 
 t() {
@@ -434,41 +500,6 @@ t() {
 
   tree -L "$level" "$path"
 }
-
-crhh() {
-  config reset --hard HEAD^
-}
-
-crh() {
-  config reset --hard "$1"
-}
-
-if [[ -r "$HOME/.config/zsh/neko_api_key" ]]; then
-  export NEKO_API_KEY="$(<"$HOME/.config/zsh/neko_api_key")"
-fi
-
-claude_custom_env="${XDG_CONFIG_HOME:-$HOME/.config}/claude.conf"
-if [[ -r "$claude_custom_env" ]]; then
-  {
-    IFS= read -r claude_custom_base_url
-    IFS= read -r claude_custom_auth_token
-    IFS= read -r claude_custom_model
-    IFS= read -r claude_custom_betas
-  } < "$claude_custom_env"
-  [[ -n "$claude_custom_base_url" ]] && export ANTHROPIC_BASE_URL="$claude_custom_base_url"
-  if [[ -n "$claude_custom_auth_token" ]]; then
-    export ANTHROPIC_AUTH_TOKEN="$claude_custom_auth_token"
-    unset ANTHROPIC_API_KEY
-  fi
-  [[ -n "$claude_custom_model" ]] && export ANTHROPIC_MODEL="$claude_custom_model"
-  if [[ -n "$claude_custom_betas" ]]; then
-    export ANTHROPIC_BETAS="$claude_custom_betas"
-  else
-    unset ANTHROPIC_BETAS
-  fi
-fi
-unset claude_custom_auth_token claude_custom_base_url claude_custom_betas claude_custom_env claude_custom_model
-unset CLAUDE_CUSTOM_BETAS
 
 live() {
   local dir="${PWD:A}"
@@ -543,10 +574,7 @@ live() {
   fi
 }
 
-
-# Added by Antigravity CLI installer
-export PATH="/home/vladelaina/.local/bin:$PATH"
-
+# Project-specific helpers
 wra() {
   if [[ $# -ne 1 ]]; then
     echo "usage: wra <migration-sql-file>"
