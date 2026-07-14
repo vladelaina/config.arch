@@ -589,7 +589,7 @@ live() {
 }
 
 # Project-specific helpers
-wra() {
+mig() {
   if [[ $# -ne 1 ]]; then
     echo "usage: wra <migration-sql-file>"
     return 2
