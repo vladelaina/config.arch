@@ -588,6 +588,10 @@ def open_bluetooth_manager():
     control_center = shutil.which("gnome-control-center")
     if control_center:
         spawn_silent([control_center, "bluetooth"])
+        return
+    local_picker = Path(__file__).with_name("bluetooth-picker.py")
+    if local_picker.is_file():
+        spawn_silent(["/usr/bin/python3", str(local_picker)])
 
 
 def bluetooth_manager_windows():

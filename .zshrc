@@ -183,7 +183,7 @@ nvim() {
 }
 
 # Replace possible aliases before defining same-name functions.
-unalias co cc cco e any anyc tag con sz 2>/dev/null
+unalias co cc ccj cco e any anyc tag con sz 2>/dev/null
 
 # Reload this shell configuration before launching AI command wrappers.
 sz() {
@@ -210,6 +210,11 @@ co() {
 cc() {
   sz
   codex resume --last "$@"
+}
+
+ccj() {
+  sz
+  codex resume --last "$@" "继续"
 }
 
 cco() {
