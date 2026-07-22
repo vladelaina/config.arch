@@ -240,6 +240,7 @@ alias ff='fastfetch'
 alias syu='sudo pacman -Syu'
 alias sps='sudo pacman -S'
 alias spr='sudo pacman -Rns'
+alias pi='pnpm install'
 alias de='pnpm dev'
 alias win='pnpm package:win'
 
