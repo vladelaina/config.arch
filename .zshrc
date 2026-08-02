@@ -5,6 +5,12 @@ unsetopt nomatch
 # PATH
 export PATH="$HOME/.local/bin:$PATH"
 
+# Android development
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export JAVA_HOME="$HOME/opt/jdk21/usr/lib/jvm/java-21-openjdk"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+
 # Added by Antigravity CLI installer
 export PATH="/home/vladelaina/.local/bin:$PATH"
 
