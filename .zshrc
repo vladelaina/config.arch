@@ -9,7 +9,6 @@ export PATH="$HOME/.local/bin:$PATH"
 export ANDROID_HOME="$HOME/Android/Sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export JAVA_HOME="$HOME/opt/jdk21/usr/lib/jvm/java-21-openjdk"
-export CAPACITOR_ANDROID_STUDIO_PATH="$HOME/opt/android-studio/bin/studio.sh"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 
 # Added by Antigravity CLI installer
@@ -324,6 +323,144 @@ alias m7='git -C /home/vladelaina/code/vlaina merge 7'
 alias me='git -C /home/vladelaina/code/vlaina merge end'
 alias ma='git -C /home/vladelaina/code/vlaina merge ai'
 alias mp='git -C /home/vladelaina/code/vlaina push origin main'
+
+# Vlaina mobile: build, install, and launch on one connected Android device.
+_vlaina_mobile_requirements() {
+  local mobile_dir="$1"
+  shift
+  local required_command
+
+  for required_command in "$@"; do
+    if ! command -v "$required_command" >/dev/null 2>&1; then
+      print -u2 "缺少 $required_command，请先安装或重新打开终端加载开发环境。"
+      return 1
+    fi
+  done
+
+  if [[ ! -x "$mobile_dir/android/gradlew" ]]; then
+    print -u2 "没有找到移动端 Android 工程：$mobile_dir/android"
+    return 1
+  fi
+}
+
+_vlaina_android_device() {
+  if ! adb start-server >/dev/null; then
+    print -u2 'ADB 无法启动，请检查 Android SDK 安装。'
+    return 1
+  fi
+
+  local adb_devices
+  local ready_count
+  local device_serial
+  adb_devices="$(adb devices)"
+  ready_count="$(print -r -- "$adb_devices" | awk 'NR > 1 && $2 == "device" { count++ } END { print count + 0 }')"
+
+  if (( ready_count == 0 )); then
+    print -u2 '没有可用的安卓设备。请连接手机、开启 USB 调试，并在手机上允许这台电脑。'
+    print -u2 -- "$adb_devices"
+    return 1
+  fi
+  if (( ready_count > 1 )); then
+    print -u2 '检测到多台安卓设备。请只保留一台设备连接后再运行。'
+    print -u2 -- "$adb_devices"
+    return 1
+  fi
+
+  device_serial="$(print -r -- "$adb_devices" | awk 'NR > 1 && $2 == "device" { print $1; exit }')"
+  print -r -- "$device_serial"
+}
+
+pa() (
+  local mobile_dir='/home/vladelaina/code/vlaina/worktrees/7/mobile'
+  _vlaina_mobile_requirements "$mobile_dir" pnpm adb java curl || return 1
+
+  local device_serial
+  device_serial="$(_vlaina_android_device)" || return 1
+  setopt localtraps
+  local dev_server_pid=''
+  local cleanup_required=true
+  trap '
+    if [[ "$cleanup_required" == true ]]; then
+      [[ -n "$dev_server_pid" ]] && kill "$dev_server_pid" >/dev/null 2>&1
+      [[ -n "$dev_server_pid" ]] && wait "$dev_server_pid" 2>/dev/null
+      adb -s "$device_serial" reverse --remove tcp:5173 >/dev/null 2>&1
+      if ! pnpm --dir "$mobile_dir" exec cap sync android >/dev/null 2>&1; then
+        print -u2 "Android 开发配置恢复失败，请运行 paa 重新同步。"
+      fi
+      cleanup_required=false
+      print "手机热更新已停止，Android 配置已恢复。"
+    fi
+  ' EXIT
+  trap 'return 130' INT TERM HUP
+
+  print "设备已连接：$device_serial"
+  print '正在启动手机热更新，保持此终端运行，按 Ctrl+C 停止...'
+
+  pnpm --dir "$mobile_dir" dev --host 127.0.0.1 --port 5173 --strictPort &
+  dev_server_pid=$!
+  local server_ready=false
+  local attempt
+  for attempt in {1..50}; do
+    if curl --fail --silent http://127.0.0.1:5173 >/dev/null 2>&1; then
+      server_ready=true
+      break
+    fi
+    if ! kill -0 "$dev_server_pid" >/dev/null 2>&1; then
+      wait "$dev_server_pid"
+      print -u2 'Vite 开发服务器启动失败，请检查上面的错误。'
+      return 1
+    fi
+    sleep 0.2
+  done
+
+  if [[ "$server_ready" != true ]]; then
+    kill "$dev_server_pid" >/dev/null 2>&1
+    wait "$dev_server_pid" 2>/dev/null
+    print -u2 'Vite 开发服务器启动超时，请确认 5173 端口没有被占用。'
+    return 1
+  fi
+
+  if ! adb -s "$device_serial" reverse tcp:5173 tcp:5173 >/dev/null; then
+    print -u2 '无法建立 USB 热更新通道，请重新连接手机后再试。'
+    return 1
+  fi
+
+  pnpm --dir "$mobile_dir" exec cap run android \
+    --target "$device_serial" \
+    --no-sync \
+    --live-reload \
+    --host 127.0.0.1 \
+    --port 5173
+  local run_status=$?
+  return "$run_status"
+)
+
+paa() {
+  local mobile_dir='/home/vladelaina/code/vlaina/worktrees/7/mobile'
+  _vlaina_mobile_requirements "$mobile_dir" pnpm adb java || return 1
+
+  local device_serial
+  device_serial="$(_vlaina_android_device)" || return 1
+  print "设备已连接：$device_serial"
+  print '正在构建 Vlaina 移动端...'
+  pnpm --dir "$mobile_dir" build || return 1
+
+  print '正在同步 Android 工程...'
+  pnpm --dir "$mobile_dir" exec cap sync android || return 1
+
+  print '正在安装到手机...'
+  if ! (cd "$mobile_dir/android" && ANDROID_SERIAL="$device_serial" ./gradlew :app:installDebug --no-daemon); then
+    print -u2 '安装失败。请解锁手机，并确认“允许通过 USB 安装”等系统提示。'
+    return 1
+  fi
+
+  adb -s "$device_serial" shell am force-stop com.vlaina.mobile || return 1
+  if ! adb -s "$device_serial" shell am start -W -n com.vlaina.mobile/.MainActivity; then
+    print -u2 '应用已安装，但启动失败。请保持手机连接后重新运行 paa。'
+    return 1
+  fi
+  print 'Vlaina 已在手机上启动。'
+}
 
 # Aliases: network checks
 alias goo='curl -so /dev/null -x "$LOCAL_PROXY_URL" -w "DNS: %{time_namelookup}s | Connect: %{time_connect}s | TLS: %{time_appconnect}s | Total: %{time_total}s\n" https://www.google.com --connect-timeout 5'
