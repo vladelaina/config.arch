@@ -9,6 +9,7 @@ export PATH="$HOME/.local/bin:$PATH"
 export ANDROID_HOME="$HOME/Android/Sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export JAVA_HOME="$HOME/opt/jdk21/usr/lib/jvm/java-21-openjdk"
+export CAPACITOR_ANDROID_STUDIO_PATH="$HOME/opt/android-studio/bin/studio.sh"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 
 # Added by Antigravity CLI installer
@@ -258,7 +259,26 @@ alias pu='git pull'
 alias pf='git push -f'
 alias r='git --no-pager log --oneline --decorate --reverse -n 10'
 alias s='git status'
-alias op='git add . && git commit -m "🌟 chore: update daily development changes and polish project details" && git push'
+
+unalias op 2>/dev/null
+op() {
+  local -a summaries=(
+    'update project files'
+    'refine project details'
+    'polish existing changes'
+    'improve project setup'
+    'adjust project components'
+    'refresh development changes'
+    'maintain project code'
+    'streamline project updates'
+    'clean up project details'
+    'apply general improvements'
+  )
+  local summary="${summaries[RANDOM % ${#summaries[@]} + 1]}"
+
+  git add . && git commit -m "🌟 chore: $summary" && git push
+}
+
 alias ckm='git checkout main'
 alias cks='git checkout stable'
 alias ckg='git checkout gh-pages'
