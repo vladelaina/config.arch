@@ -271,6 +271,7 @@ alias syu='sudo pacman -Syu'
 alias sps='sudo pacman -S'
 alias spr='sudo pacman -Rns'
 alias pi='pnpm install'
+alias pd='pnpm install && pnpm dev'
 de() {
   local repo_root user_data_path lock_path lock_target pid process_cwd
 
