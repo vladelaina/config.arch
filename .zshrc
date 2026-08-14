@@ -69,6 +69,20 @@ for codex_custom_env in \
 done
 unset codex_custom_api_key codex_custom_base_url codex_custom_env codex_custom_env_dir codex_custom_first_line
 
+# Gemini CLI environment
+gemini_custom_env="${XDG_CONFIG_HOME:-$HOME/.config}/gemini.conf"
+if [[ -r "$gemini_custom_env" ]]; then
+  {
+    IFS= read -r gemini_custom_base_url
+    IFS= read -r gemini_custom_api_key
+    IFS= read -r gemini_custom_model
+  } < "$gemini_custom_env"
+  [[ -n "$gemini_custom_base_url" ]] && export GOOGLE_GEMINI_BASE_URL="$gemini_custom_base_url"
+  [[ -n "$gemini_custom_api_key" ]] && export GEMINI_API_KEY="$gemini_custom_api_key"
+  [[ -n "$gemini_custom_model" ]] && export GEMINI_MODEL="$gemini_custom_model"
+fi
+unset gemini_custom_api_key gemini_custom_base_url gemini_custom_env gemini_custom_model
+
 # Claude environment
 claude_custom_env="${XDG_CONFIG_HOME:-$HOME/.config}/claude.conf"
 if [[ -r "$claude_custom_env" ]]; then
@@ -189,7 +203,7 @@ nvim() {
 }
 
 # Replace possible aliases before defining same-name functions.
-unalias co cc ccj cco e any anyc tag con sz 2>/dev/null
+unalias co cc ccj cco ge gc e any anyc tag con sz 2>/dev/null
 
 # Reload this shell configuration before launching AI command wrappers.
 sz() {
@@ -216,6 +230,16 @@ co() {
 cc() {
   sz
   codex resume --last "$@"
+}
+
+ge() {
+  sz
+  gemini "$@"
+}
+
+gc() {
+  sz
+  gemini --resume latest "$@"
 }
 
 ccj() {
@@ -247,8 +271,44 @@ alias syu='sudo pacman -Syu'
 alias sps='sudo pacman -S'
 alias spr='sudo pacman -Rns'
 alias pi='pnpm install'
-alias de='pnpm dev'
+de() {
+  local repo_root user_data_path lock_path lock_target pid process_cwd
+
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    print -u2 'de: not inside a git repository'
+    return 1
+  }
+
+  user_data_path="$repo_root/temp/electron-user-data-dev"
+  lock_path="$user_data_path/SingletonLock"
+
+  if [[ -L "$lock_path" ]]; then
+    lock_target="$(readlink "$lock_path")"
+    pid="${lock_target##*-}"
+
+    if [[ "$pid" == <-> ]] && kill -0 "$pid" 2>/dev/null; then
+      process_cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)"
+      if [[ "$process_cwd" == "$repo_root" ]]; then
+        print "de: stopping existing Electron instance (PID $pid)"
+        kill "$pid" 2>/dev/null
+
+        for _ in {1..50}; do
+          kill -0 "$pid" 2>/dev/null || break
+          sleep 0.1
+        done
+
+        if kill -0 "$pid" 2>/dev/null; then
+          print -u2 "de: Electron instance (PID $pid) did not stop"
+          return 1
+        fi
+      fi
+    fi
+  fi
+
+  pnpm dev "$@"
+}
 alias win='pnpm package:win'
+alias vbu='cd /home/vladelaina/code/vlaina && rm -rf /home/vladelaina/code/vlaina/release && pnpm package:win'
 
 # Aliases: git
 alias cl='git clone'
@@ -461,6 +521,70 @@ paa() {
   fi
   print 'Vlaina 已在手机上启动。'
 }
+
+dea() (
+  local mobile_dir='/home/vladelaina/code/vlaina/worktrees/7/mobile'
+  local required_command
+
+  for required_command in pnpm curl ss xdg-open; do
+    if ! command -v "$required_command" >/dev/null 2>&1; then
+      print -u2 "缺少 $required_command，无法启动移动端 Web 预览。"
+      return 1
+    fi
+  done
+  if [[ ! -f "$mobile_dir/package.json" ]]; then
+    print -u2 "没有找到移动端项目：$mobile_dir"
+    return 1
+  fi
+
+  local preview_port=''
+  local candidate_port
+  for candidate_port in {4173..4193}; do
+    if [[ -z "$(ss -H -ltn "sport = :$candidate_port")" ]]; then
+      preview_port="$candidate_port"
+      break
+    fi
+  done
+  if [[ -z "$preview_port" ]]; then
+    print -u2 '4173-4193 端口都已被占用，无法启动移动端 Web 预览。'
+    return 1
+  fi
+  local preview_url="http://127.0.0.1:$preview_port"
+
+  setopt localtraps
+  local dev_server_pid=''
+  trap '
+    [[ -n "$dev_server_pid" ]] && kill "$dev_server_pid" >/dev/null 2>&1
+    [[ -n "$dev_server_pid" ]] && wait "$dev_server_pid" 2>/dev/null
+  ' EXIT
+  trap 'return 130' INT TERM HUP
+
+  print '正在启动移动端 Web 预览...'
+  pnpm --dir "$mobile_dir" exec vite --host 127.0.0.1 --port "$preview_port" --strictPort &
+  dev_server_pid=$!
+
+  local attempt
+  for attempt in {1..50}; do
+    if ! kill -0 "$dev_server_pid" >/dev/null 2>&1; then
+      wait "$dev_server_pid"
+      print -u2 '移动端 Web 启动失败，请检查上面的错误。'
+      return 1
+    fi
+    if curl --fail --silent "$preview_url" >/dev/null 2>&1; then
+      if ! xdg-open "$preview_url" >/dev/null 2>&1; then
+        print -u2 "浏览器打开失败，请手动访问：$preview_url"
+      fi
+      print "移动端 Web 已启动：$preview_url"
+      print '保持此终端运行，按 Ctrl+C 停止。'
+      wait "$dev_server_pid"
+      return $?
+    fi
+    sleep 0.2
+  done
+
+  print -u2 "移动端 Web 启动超时：$preview_url"
+  return 1
+)
 
 # Aliases: network checks
 alias goo='curl -so /dev/null -x "$LOCAL_PROXY_URL" -w "DNS: %{time_namelookup}s | Connect: %{time_connect}s | TLS: %{time_appconnect}s | Total: %{time_total}s\n" https://www.google.com --connect-timeout 5'
