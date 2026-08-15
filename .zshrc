@@ -361,6 +361,7 @@ command_not_found_handler() {
 # Aliases: project navigation
 alias code='cd /home/vladelaina/code'
 alias ca='cd /home/vladelaina/code/Catime'
+alias ne='cd /home/vladelaina/code/nekotick'
 alias vv='cd /home/vladelaina/code/vlaina'
 alias vw='cd /home/vladelaina/code/official-website'
 alias 1='cd /home/vladelaina/code/vlaina/worktrees/1'
