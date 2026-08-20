@@ -203,7 +203,7 @@ nvim() {
 }
 
 # Replace possible aliases before defining same-name functions.
-unalias co cc ccj cco ge gc e any anyc tag con sz 2>/dev/null
+unalias co cc ccj cco ge gc e tag con sz 2>/dev/null
 
 # Reload this shell configuration before launching AI command wrappers.
 sz() {
@@ -273,7 +273,7 @@ alias spr='sudo pacman -Rns'
 alias pi='pnpm install'
 alias pd='pnpm install && pnpm dev'
 de() {
-  local repo_root user_data_path lock_path lock_target pid process_cwd
+  local repo_root user_data_path lock_path lock_target pid process_cwd process_state
 
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     print -u2 'de: not inside a git repository'
@@ -295,12 +295,28 @@ de() {
 
         for _ in {1..50}; do
           kill -0 "$pid" 2>/dev/null || break
+          process_state="$(ps -o stat= -p "$pid" 2>/dev/null)"
+          [[ "$process_state" == Z* ]] && break
           sleep 0.1
         done
 
-        if kill -0 "$pid" 2>/dev/null; then
-          print -u2 "de: Electron instance (PID $pid) did not stop"
-          return 1
+        process_state="$(ps -o stat= -p "$pid" 2>/dev/null)"
+        if kill -0 "$pid" 2>/dev/null && [[ "$process_state" != Z* ]]; then
+          print "de: Electron instance (PID $pid) did not stop gracefully; forcing it to stop"
+          kill -KILL "$pid" 2>/dev/null
+
+          for _ in {1..20}; do
+            kill -0 "$pid" 2>/dev/null || break
+            process_state="$(ps -o stat= -p "$pid" 2>/dev/null)"
+            [[ "$process_state" == Z* ]] && break
+            sleep 0.1
+          done
+
+          process_state="$(ps -o stat= -p "$pid" 2>/dev/null)"
+          if kill -0 "$pid" 2>/dev/null && [[ "$process_state" != Z* ]]; then
+            print -u2 "de: Electron instance (PID $pid) could not be stopped"
+            return 1
+          fi
         fi
       fi
     fi
@@ -309,10 +325,77 @@ de() {
   pnpm dev "$@"
 }
 alias win='pnpm package:win'
-alias vbu='cd /home/vladelaina/code/vlaina && rm -rf /home/vladelaina/code/vlaina/release && pnpm package:win'
+alias dew='cd /home/vladelaina/code/vlaina && rm -rf /home/vladelaina/code/vlaina/release && with-proxy /usr/bin/pnpm package:win'
 
 # Aliases: git
-alias cl='git clone'
+unalias cl 2>/dev/null
+
+# Clone with retries. A failed clone often leaves a usable .git directory;
+# fetch from it so Git can reuse objects already downloaded.
+git-clone-retry() {
+  local max_attempts="${GIT_CLONE_RETRIES:-8}"
+  local retry_delay="${GIT_CLONE_RETRY_DELAY:-5}"
+  local clone_threads="${GIT_CLONE_THREADS:-8}"
+  local attempt=1 url='' dest='' arg='' skip_next=0
+  local -a clone_args=("$@")
+  local -a git_perf_args=(-c "pack.threads=${clone_threads}" \
+    -c "index.threads=${clone_threads}" -c checkout.workers=0)
+
+  # Find the URL and destination for the recovery fetch. This covers the
+  # clone options commonly used with cl/cl1 while leaving all arguments intact.
+  for arg in "$@"; do
+    if (( skip_next )); then
+      skip_next=0
+      continue
+    fi
+    case "$arg" in
+      --depth|--branch|-b|--origin|-o|--config|-c|--reference|--reference-if-able|--filter)
+        skip_next=1
+        continue
+        ;;
+      --depth=*|--branch=*|--origin=*|--config=*|--reference=*|--filter=*)
+        continue
+        ;;
+      -*)
+        continue
+        ;;
+    esac
+    if [[ -z "$url" ]]; then
+      url="$arg"
+    else
+      dest="$arg"
+      break
+    fi
+  done
+  if [[ -z "$dest" && -n "$url" ]]; then
+    dest="${url##*/}"
+    dest="${dest%.git}"
+  fi
+
+  while (( attempt <= max_attempts )); do
+    if [[ ! -d "$dest/.git" ]]; then
+      git "${git_perf_args[@]}" -c http.lowSpeedLimit=1000 \
+        -c http.lowSpeedTime=60 clone "${clone_args[@]}"
+    else
+      git "${git_perf_args[@]}" -c http.lowSpeedLimit=1000 \
+        -c http.lowSpeedTime=60 \
+        -C "$dest" fetch --prune origin
+    fi
+    local status=$?
+    (( status == 0 )) && return 0
+    if (( attempt == max_attempts )); then
+      print -u2 "git clone: failed after ${max_attempts} attempts"
+      return "$status"
+    fi
+    print -u2 "git clone: attempt ${attempt}/${max_attempts} failed; retrying in ${retry_delay}s..."
+    sleep "$retry_delay"
+    (( attempt++ ))
+  done
+}
+
+cl() {
+  git-clone-retry "$@"
+}
 alias p='git push'
 alias pt='git push --tags'
 alias pu='git pull'
@@ -350,7 +433,7 @@ command_not_found_handler() {
   shift
 
   if [[ "$command_name" =~ '^cl([1-9][0-9]*)$' ]]; then
-    git clone --depth "${match[1]}" "$@"
+    git-clone-retry --depth "${match[1]}" "$@"
     return $?
   fi
 
@@ -714,70 +797,304 @@ con() {
   env -u ALL_PROXY -u all_proxy -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy GIT_SSH_COMMAND='ssh -F none' git -C "$repo" push
 }
 
-# Terminal and desktop helpers
+# ┌─ any / anyc: Codex keep-alive manager ────────────────────────────────────
+# `any` starts one Kitty window with three staggered panes. The implementation
+# helpers live directly below it, and `anyc` (the matching stop command) closes
+# the block. Keeping this section contiguous makes the feature easy to find.
+unalias any anyc 2>/dev/null
+
 any() {
   if ! command -v kitty >/dev/null 2>&1; then
     echo "kitty is not installed or not in PATH"
     return 127
   fi
 
-  local class="any-kitty"
   local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/any-kitty"
-  local pid_file="$runtime_dir/pids"
-  local session kitty_pid
+  local lock_dir="$runtime_dir/lock"
+  local manager_file="$runtime_dir/manager.pid"
+  local worker_count="${ANY_WORKERS:-3}"
+  local manager_pid existing_manager
 
+  [[ "$worker_count" == <-> && worker_count -ge 1 && worker_count -le 3 ]] || worker_count=3
   mkdir -p "$runtime_dir"
-  session="$(mktemp "${TMPDIR:-/tmp}/any-kitty-session.XXXXXX")" || return
 
-  {
-    print -r -- "layout grid"
-    for _ in {1..40}; do
-      print -r -- "launch zsh -ic 'co \"say 6\"; exec zsh'"
-    done
-  } >| "$session"
-
-  kitty --class "$class" --name "$class" --session "$session" >/dev/null 2>&1 &
-  kitty_pid=$!
-  print -r -- "$kitty_pid" >> "$pid_file"
-  disown "$kitty_pid" 2>/dev/null
-
-  ( sleep 5; command rm -f "$session" ) &!
-}
-
-anyc() {
-  local class="any-kitty"
-  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/any-kitty"
-  local pid_file="$runtime_dir/pids"
-  local pid cmdline stopped=0
-  local -a remaining
-
-  if [[ ! -f "$pid_file" ]]; then
-    echo "no any kitty windows recorded"
-    return 0
-  fi
-
-  while IFS= read -r pid; do
-    [[ "$pid" == <-> ]] || continue
-    [[ -r "/proc/$pid/cmdline" ]] || continue
-
-    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
-    if [[ "$cmdline" == *kitty* && "$cmdline" == *"$class"* ]]; then
-      if kill "$pid" 2>/dev/null; then
-        (( stopped++ ))
-      else
-        remaining+=("$pid")
-      fi
+  if [[ -r "$manager_file" ]]; then
+    IFS= read -r existing_manager < "$manager_file"
+    if _any_pid_is_supervisor "$existing_manager"; then
+      echo "any is already running ($worker_count-worker limit)"
+      return 0
     fi
-  done < "$pid_file"
-
-  if (( ${#remaining[@]} > 0 )); then
-    print -r -l -- "${remaining[@]}" >| "$pid_file"
-  else
-    command rm -f "$pid_file"
   fi
 
-  echo "closed $stopped any kitty window(s)"
+  command rm -f "$manager_file" "$runtime_dir/pids"
+  rmdir "$lock_dir" 2>/dev/null
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    echo "could not acquire any supervisor lock"
+    return 1
+  fi
+
+  setsid zsh -ic '_any_supervisor "$1" "$2"' any-supervisor \
+    "$runtime_dir" "$worker_count" </dev/null \
+    >| "$runtime_dir/supervisor.log" 2>&1 &!
+  manager_pid=$!
+  print -r -- "$manager_pid" >| "$manager_file"
+
+  sleep 0.1
+  if ! _any_pid_is_supervisor "$manager_pid"; then
+    echo "failed to start any supervisor"
+    command rm -f "$manager_file"
+    rmdir "$lock_dir" 2>/dev/null
+    return 1
+  fi
+
+  echo "started one Kitty with $worker_count Codex panes (startup delays: 0s, 2s, 4s; unlimited retries)"
+  echo "use anyc to stop them"
 }
+
+# any internals: process checks, retry loop, worker and supervisor.
+# These stay top-level so `anyc` works even when `any` was not run in this shell.
+_any_pid_is_alive() {
+  local pid="$1" process_state
+
+  [[ "$pid" == <-> && -r "/proc/$pid/stat" ]] || return 1
+  process_state="$(ps -o stat= -p "$pid" 2>/dev/null)"
+  [[ -n "$process_state" && "$process_state" != Z* ]]
+}
+
+_any_pid_start_time() {
+  local pid="$1"
+
+  [[ "$pid" == <-> && -r "/proc/$pid/stat" ]] || return 1
+  awk '{print $22}' "/proc/$pid/stat"
+}
+
+_any_pid_is_kitty() {
+  local pid="$1" expected_start="${2:-}" actual_start executable cmdline
+
+  _any_pid_is_alive "$pid" || return 1
+  executable="$(readlink -f "/proc/$pid/exe" 2>/dev/null)"
+  if [[ "${executable:t}" != kitty ]]; then
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"
+    [[ "$cmdline" == *kitty* && "$cmdline" == *"any-kitty"* ]] || return 1
+  fi
+
+  if [[ -n "$expected_start" ]]; then
+    actual_start="$(_any_pid_start_time "$pid")" || return 1
+    [[ "$actual_start" == "$expected_start" ]] || return 1
+  fi
+}
+
+_any_pid_is_supervisor() {
+  local pid="$1" cmdline
+
+  _any_pid_is_alive "$pid" || return 1
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+  [[ "$cmdline" == *"any-supervisor"* && "$cmdline" == *"_any_supervisor"* ]]
+}
+
+_any_find_supervisors() {
+  local runtime_dir="$1" pid cmdline
+
+  while read -r pid cmdline; do
+    [[ "$pid" == <-> ]] || continue
+    [[ "$cmdline" == *"_any_supervisor "* && "$cmdline" == *"$runtime_dir"* ]] || continue
+    print -r -- "$pid"
+  done < <(ps -eo pid=,args=)
+}
+
+_any_kill_tree() {
+  local pid="$1" child
+
+  [[ "$pid" == <-> ]] || return 0
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    _any_kill_tree "$child"
+  done
+  kill -TERM "$pid" 2>/dev/null
+}
+
+_any_collect_tree() {
+  local pid="$1" child
+
+  [[ "$pid" == <-> ]] || return 0
+  print -r -- "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null); do
+    _any_collect_tree "$child"
+  done
+}
+
+_any_write_pids() {
+  local pid_file="$1" pids_file="$pid_file.tmp.$$" pid start_time
+
+  : >| "$pids_file"
+  for pid in "$@[2,-1]"; do
+    [[ "$pid" == <-> ]] || continue
+    start_time="$(_any_pid_start_time "$pid")" || continue
+    print -r -- "$pid:$start_time" >> "$pids_file"
+  done
+  command mv -f "$pids_file" "$pid_file"
+}
+
+_any_codex() {
+  # Keep retrying forever on the fixed channel. Keep-alive calls are isolated
+  # from normal Codex settings so they use minimal reasoning, context and
+  # output, and never accumulate session history. Invoke the executable
+  # directly and repeat the provider override here: this keeps the global
+  # fallback URL in ~/.codex/config.toml from winning over the keep-alive URL.
+  local attempt=1 result any_base_url="https://anyrouter.top/v1"
+
+  while true; do
+    CODEX_CUSTOM_BASE_URL="$any_base_url" \
+      command codex exec \
+        --ephemeral \
+        --skip-git-repo-check \
+        --disable shell_tool \
+        -c 'model_provider="custom"' \
+        -c 'model_providers.custom.base_url="https://anyrouter.top/v1"' \
+        -c 'model_reasoning_effort="low"' \
+        -c 'model_verbosity="low"' \
+        -c 'model_reasoning_summary="none"' \
+        -c 'include_apps_instructions=false' \
+        -c 'include_collaboration_mode_instructions=false' \
+        -c 'include_environment_context=false' \
+        "$@"
+    result=$?
+    (( result == 0 )) && return 0
+    print -u2 -- "[any] Codex attempt $attempt failed; retrying..."
+    sleep 2
+    (( attempt++ ))
+  done
+}
+
+_any_worker() {
+  local slot="${ANY_WORKER_SLOT:-0}"
+  local retry_delay="${ANY_RETRY_DELAY:-2}"
+  local nonce prompt
+
+  [[ "$retry_delay" == <-> || "$retry_delay" == <->.<-> ]] || retry_delay=2
+
+  trap 'exit 143' TERM INT HUP
+  print -r -- "[any:$slot] Codex worker started (https://anyrouter.top/v1)"
+
+  while true; do
+    nonce=$(( RANDOM % 1001 ))
+    prompt="Reply only OK. nonce=$nonce"
+    print -r -- "[any:$slot] codex keep-alive: $nonce"
+    _any_codex "$prompt"
+    sleep "$retry_delay"
+  done
+}
+
+_any_supervisor() {
+  local runtime_dir="$1"
+  local worker_count="$2"
+  local class="any-kitty"
+  local pid_file="$runtime_dir/pids"
+  local pid kitty_pid session
+  local stopping=0
+
+  trap 'stopping=1' TERM INT HUP
+
+  while (( ! stopping )); do
+    pid="${kitty_pid:-}"
+    if [[ -n "$pid" ]] && _any_pid_is_kitty "$pid"; then
+      sleep 2
+      continue
+    fi
+
+    session="$(mktemp "${TMPDIR:-/tmp}/any-kitty-session.XXXXXX")" || break
+    {
+      print -r -- "layout grid"
+      print -r -- "launch zsh -ic 'sleep 0; ANY_WORKER_SLOT=1 _any_worker'"
+      print -r -- "launch zsh -ic 'sleep 2; ANY_WORKER_SLOT=2 _any_worker'"
+      print -r -- "launch zsh -ic 'sleep 4; ANY_WORKER_SLOT=3 _any_worker'"
+    } >| "$session"
+
+    kitty --class "$class" --name "$class" --session "$session" \
+      >/dev/null 2>&1 &!
+    kitty_pid=$!
+    ( sleep 5; command rm -f "$session" ) &!
+
+    _any_write_pids "$pid_file" "$kitty_pid"
+    sleep 2
+  done
+
+  _any_pid_is_kitty "${kitty_pid:-}" && _any_kill_tree "$kitty_pid"
+  command rm -f "$pid_file"
+}
+
+# anyc: matching stop/cleanup entry point
+anyc() {
+  local runtime_dir="${XDG_RUNTIME_DIR:-/tmp}/any-kitty"
+  local lock_dir="$runtime_dir/lock"
+  local manager_file="$runtime_dir/manager.pid"
+  local pid_file="$runtime_dir/pids"
+  local manager_pid pid root_record root_pid root_start stopped=0
+  local -a worker_roots target_pids
+
+  # 1) Snapshot the entire process forest before asking the supervisor to exit.
+  #    This keeps cleanup reliable even if it removes the PID file first.
+  if [[ -f "$pid_file" ]]; then
+    while IFS= read -r root_record; do
+      root_pid="${root_record%%:*}"
+      if [[ "$root_record" == *:* ]]; then
+        root_start="${root_record#*:}"
+      else
+        root_start=""
+      fi
+      _any_pid_is_kitty "$root_pid" "$root_start" || continue
+      worker_roots+=("$root_pid")
+      target_pids+=("${(@f)$(_any_collect_tree "$root_pid")}")
+    done < "$pid_file"
+  fi
+
+  # 2) Stop the recorded supervisor, then recover any stale supervisor whose
+  #    manager.pid disappeared during an interrupted shell/session.
+  if [[ -r "$manager_file" ]]; then
+    IFS= read -r manager_pid < "$manager_file"
+    _any_pid_is_supervisor "$manager_pid" && kill -TERM "$manager_pid" 2>/dev/null
+    # Give the supervisor time to stop before killing its last known workers;
+    # otherwise it could immediately replace a window we are closing.
+    for _ in {1..20}; do
+      _any_pid_is_supervisor "$manager_pid" || break
+      sleep 0.1
+    done
+    _any_pid_is_supervisor "$manager_pid" && kill -KILL "$manager_pid" 2>/dev/null
+  fi
+
+  # Recover from a stale/missing manager.pid left by an earlier interrupted
+  # shell. Only supervisors carrying this run's directory are targeted.
+  for manager_pid in $(_any_find_supervisors "$runtime_dir"); do
+    kill -TERM "$manager_pid" 2>/dev/null
+  done
+  sleep 0.2
+  for manager_pid in $(_any_find_supervisors "$runtime_dir"); do
+    kill -KILL "$manager_pid" 2>/dev/null
+  done
+
+  # 3) Stop every Kitty descendant (including Codex and its helper processes).
+  stopped=${#worker_roots[@]}
+  if (( ${#target_pids[@]} > 0 )); then
+    for pid in "${target_pids[@]}"; do
+      [[ "$pid" == <-> ]] && kill -TERM "$pid" 2>/dev/null
+    done
+    sleep 0.2
+    for pid in "${target_pids[@]}"; do
+      [[ "$pid" == <-> ]] && kill -KILL "$pid" 2>/dev/null
+    done
+  fi
+  # 4) Remove runtime state only after the process tree has been signalled.
+  command rm -f "$pid_file"
+  command rm -f "$manager_file" "$runtime_dir/supervisor.log"
+  rmdir "$lock_dir" 2>/dev/null
+
+  if (( stopped == 0 )); then
+    echo "no any Codex workers recorded"
+  else
+    echo "closed $stopped any Codex worker window(s)"
+  fi
+}
+
+# └─ end any / anyc ─────────────────────────────────────────────────────────
 
 e() {
   nautilus . >/dev/null 2>&1 &
