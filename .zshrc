@@ -1212,3 +1212,5 @@ mig() {
   pnpm exec wrangler --config ./wrangler.toml d1 execute vlaina-db --remote --file="$file"
 }
 alias wca='cd /home/vladelaina/code/web/Catime'
+# Jump to the open2d project directory.
+alias o2='cd /home/vladelaina/code/open2d'
